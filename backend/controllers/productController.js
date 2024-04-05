@@ -6,25 +6,51 @@ const APIFeatures= require('../utils/apiFeauters')
 
 // GET Products n
 exports.getProducts= catchAsyncError(async(req,res,next)=>{
-const resPerPage=2;
+const resPerPage=4;
+ 
 
-    const apiFeauters = new APIFeatures(Product.find(),req.query).search().filter().paginate(resPerPage);
+ let buildQuery = () => {
+    return new APIFeatures(Product.find(), req.query).search().filter()
+}
+const filteredProductsCount = await buildQuery().query.countDocuments({})
+const totalProductsCount = await Product.countDocuments({});
+let productsCount = totalProductsCount;
 
-    const products= await  apiFeauters.query;
-    res.status(200).json({
+if(filteredProductsCount !== totalProductsCount) {
+    productsCount = filteredProductsCount;
+}
+
+const products = await buildQuery().paginate(resPerPage).query;
+  res.status(200).json({
         success:true,
-        count:products.length,
+        count:productsCount,
+        resPerPage,
         products
     })
 })
-// create products  http://localhost:8000/api/v1/product/new
-exports.newProduct =  catchAsyncError(async( req, res, next)=>{
+//Create Product - /api/v1/product/new
+exports.newProduct = catchAsyncError(async (req, res, next)=>{
+    let images = []
+    let BASE_URL = process.env.BACKEND_URL;
+    if(process.env.NODE_ENV === "production"){
+        BASE_URL = `${req.protocol}://${req.get('host')}`
+    }
+    
+    if(req.files.length > 0) {
+        req.files.forEach( file => {
+            let url = `${BASE_URL}/uploads/product/${file.originalname}`;
+            images.push({ image: url })
+        })
+    }
+
+    req.body.images = images;
+
     req.body.user = req.user.id;
-   const product =  await Product.create(req.body);
-   res.status(201).json({
-    success:true,
-    product
-   })
+    const product = await Product.create(req.body);
+    res.status(201).json({
+        success: true,
+        product
+    })
 });
 //GET Single product  http://localhost:8000/api/v1/product/
  exports.getSingleProduct = async(req,res,next)=>{
@@ -38,26 +64,50 @@ exports.newProduct =  catchAsyncError(async( req, res, next)=>{
     product
     })
  }
-///Update product  http://localhost:8000/api/v1/product/id
-exports.updateProduct = async(req,res,next)=>{
-    let product=await Product.findById(req.params.id);
+//Update Product - api/v1/product/:id
+exports.updateProduct = catchAsyncError(async (req, res, next) => {
+    let product = await Product.findById(req.params.id);
 
-    if(!product){
+    //uploading images
+    let images = []
+
+    //if images not cleared we keep existing images
+    if(req.body.imagesCleared === 'false' ) {
+        images = product.images;
+    }
+    let BASE_URL = process.env.BACKEND_URL;
+    if(process.env.NODE_ENV === "production"){
+        BASE_URL = `${req.protocol}://${req.get('host')}`
+    }
+
+    if(req.files.length > 0) {
+        req.files.forEach( file => {
+            let url = `${BASE_URL}/uploads/product/${file.originalname}`;
+            images.push({ image: url })
+        })
+    }
+
+
+    req.body.images = images;
+    
+    if(!product) {
         return res.status(404).json({
-            success:false,
-            message:"product not found",
+            success: false,
+            message: "Product not found"
         });
     }
-   product= await Product.findByIdAndUpdate(req.params.id,req.body,{
-         new:true,
-         runValidators:true
+
+    product = await Product.findByIdAndUpdate(req.params.id, req.body, {
+        new: true,
+        runValidators: true
     })
 
     res.status(200).json({
-        success:true,
+        success: true,
         product
     })
-}
+
+})
 //delete product
 exports.deleteProduct = async(req,res,next)=>{
     const product=await Product.findById(req.params.id);
@@ -153,6 +203,12 @@ exports.deleteReview = catchAsyncError(async (req, res, next) =>{
     res.status(200).json({
         success: true
     })
-
-
+});
+// get admin products  - api/v1/admin/products
+exports.getAdminProducts = catchAsyncError(async (req, res, next) =>{
+    const products = await Product.find();
+    res.status(200).send({
+        success: true,
+        products
+    })
 });
